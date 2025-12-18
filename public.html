@@ -6,3 +6,166 @@ const firebaseConfig = {
   messagingSenderId: "677739653412",
   appId: "1:677739653412:web:5937442f4c01d075ceebb1"
 };
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DublinFix IT — Enquiry</title>
+  <style>
+    :root { --bg:#0b1220; --card:#121b2f; --muted:#9fb0d0; --txt:#e9f0ff; --accent:#6aa7ff; --bad:#ff6a6a; --ok:#7dffb2; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:linear-gradient(160deg,#070b14,#0b1220); color:var(--txt); }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 24px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px; }
+    nav a { color:var(--muted); text-decoration:none; margin-left:12px; }
+    nav a:hover { color:var(--txt); }
+    .card { background: rgba(18,27,47,.85); border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 18px; box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p { color: var(--muted); margin: 0 0 14px; }
+    label { display:block; font-size: 13px; color: var(--muted); margin-top: 12px; }
+    input, textarea, select {
+      width:100%; box-sizing:border-box; margin-top:6px;
+      background:#0b1327; color:var(--txt); border:1px solid rgba(255,255,255,.10);
+      border-radius: 12px; padding: 10px 12px; outline:none;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 720px){ .row{grid-template-columns:1fr;} }
+    button {
+      margin-top: 14px; width:100%;
+      background: var(--accent); border: none; color:#061028; font-weight: 700;
+      padding: 12px 14px; border-radius: 12px; cursor:pointer;
+    }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    .msg { margin-top: 12px; padding: 10px 12px; border-radius: 12px; display:none; }
+    .msg.ok { background: rgba(125,255,178,.12); border:1px solid rgba(125,255,178,.25); color: var(--ok); }
+    .msg.bad { background: rgba(255,106,106,.12); border:1px solid rgba(255,106,106,.25); color: var(--bad); }
+    footer { margin-top: 14px; color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div style="font-weight:800;">DublinFix IT</div>
+        <div style="color:var(--muted); font-size:12px;">Public Enquiry Form</div>
+      </div>
+      <nav>
+        <a href="public.html">Public</a>
+        <a href="staff.html">Staff</a>
+        <a href="insights.html">Insights</a>
+      </nav>
+    </header>
+
+    <div class="card">
+      <h1>Request help with your device</h1>
+      <p>Submit your enquiry. Our team will triage it and update status internally.</p>
+
+      <form id="enquiryForm">
+        <div class="row">
+          <div>
+            <label>Full name</label>
+            <input id="fullName" maxlength="80" placeholder="e.g., Aoife Murphy" required />
+          </div>
+          <div>
+            <label>Email</label>
+            <input id="email" type="email" maxlength="120" placeholder="e.g., aoife@email.com" required />
+          </div>
+        </div>
+
+        <label>Topic</label>
+        <select id="topic">
+          <option value="Repair">Repair</option>
+          <option value="Data Recovery">Data Recovery</option>
+          <option value="Quote">Quote</option>
+          <option value="Other">Other</option>
+        </select>
+
+        <label>Message</label>
+        <textarea id="message" maxlength="1000" placeholder="Describe the issue (min 10 characters)..." required></textarea>
+
+        <button id="submitBtn" type="submit">Submit Enquiry</button>
+
+        <div id="okMsg" class="msg ok"></div>
+        <div id="badMsg" class="msg bad"></div>
+
+        <footer>
+          This is a demo mini-SaaS for NCI. Data is stored in Firestore.
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+    // ✅ PASTE YOUR CONFIG HERE (already done)
+    const firebaseConfig = {
+      apiKey: "AIzaSyBHl8DNvITATjqw2u8DhbopnHTPfDR_RiU",
+      authDomain: "dublinfix-enquiry-saas.firebaseapp.com",
+      projectId: "dublinfix-enquiry-saas",
+      storageBucket: "dublinfix-enquiry-saas.firebasestorage.app",
+      messagingSenderId: "677739653412",
+      appId: "1:677739653412:web:5937442f4c01d075ceebb1"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const form = document.getElementById("enquiryForm");
+    const submitBtn = document.getElementById("submitBtn");
+    const okMsg = document.getElementById("okMsg");
+    const badMsg = document.getElementById("badMsg");
+
+    function show(el, text){
+      el.style.display = "block";
+      el.textContent = text;
+    }
+    function hide(el){ el.style.display = "none"; el.textContent = ""; }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hide(okMsg); hide(badMsg);
+
+      const fullName = document.getElementById("fullName").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const topic = document.getElementById("topic").value;
+      const message = document.getElementById("message").value.trim();
+
+      // Basic validation
+      if (fullName.length < 2) return show(badMsg, "Please enter a valid full name (min 2 characters).");
+      if (!email.includes("@")) return show(badMsg, "Please enter a valid email address.");
+      if (message.length < 10) return show(badMsg, "Message must be at least 10 characters.");
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Submitting...";
+
+      try {
+        await addDoc(collection(db, "enquiries"), {
+          fullName,
+          email,
+          topic,
+          message,
+          status: "New",
+          internalNotes: "",
+          assignedTo: "",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          resolvedAt: null
+        });
+
+        form.reset();
+        show(okMsg, "✅ Submitted! Your enquiry has been received.");
+      } catch (err) {
+        console.error(err);
+        show(badMsg, "❌ Could not submit. Check Firestore rules + your Firebase config.");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit Enquiry";
+      }
+    });
+  </script>
+</body>
+</html>
