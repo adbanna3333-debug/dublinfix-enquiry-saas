@@ -26,18 +26,6 @@
     .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); color: var(--muted); display:inline-block; }
     .msg { margin-top: 12px; padding: 10px 12px; border-radius: 12px; display:none; }
     .msg.bad { background: rgba(255,106,106,.12); border:1px solid rgba(255,106,106,.25); color: var(--bad); }
-    label { display:block; font-size: 13px; color: var(--muted); margin-top: 10px; }
-    input {
-      width:100%; box-sizing:border-box; margin-top:6px;
-      background:#0b1327; color:var(--txt); border:1px solid rgba(255,255,255,.10);
-      border-radius: 12px; padding: 10px 12px; outline:none;
-    }
-    button {
-      margin-top: 12px;
-      background: var(--accent); border: none; color:#061028; font-weight: 800;
-      padding: 10px 12px; border-radius: 12px; cursor:pointer;
-    }
-    button.secondary { background: transparent; color: var(--txt); border:1px solid rgba(255,255,255,.14); }
   </style>
 </head>
 <body>
@@ -54,24 +42,7 @@
       </nav>
     </header>
 
-    <div class="card" id="loginCard">
-      <h1>Staff login (Insights)</h1>
-      <p>Use the same staff credentials as staff.html.</p>
-      <div class="muted" style="font-size:12px;">
-        Demo login: staff@nci-demo.ie / Demo123!
-      </div>
-      <label>Email</label>
-      <input id="email" type="email" placeholder="staff@nci-demo.ie">
-      <label>Password</label>
-      <input id="password" type="password" placeholder="Demo123!">
-      <button id="loginBtn">Sign in</button>
-      <button id="logoutBtn" class="secondary" style="display:none;">Sign out</button>
-      <div id="loginErr" class="msg bad"></div>
-    </div>
-
-    <div style="height:14px;"></div>
-
-    <div class="grid" id="dash" style="display:none;">
+    <div class="grid">
       <div class="card">
         <h1>Total enquiries</h1>
         <div id="total" class="big">0</div>
@@ -90,7 +61,11 @@
         <div class="muted">Resolved / Total</div>
         <div class="bar"><div id="rateBar"></div></div>
       </div>
+    </div>
 
+    <div style="height:14px;"></div>
+
+    <div class="grid">
       <div class="card">
         <h1>Last 24 hours</h1>
         <div id="last24" class="big">0</div>
@@ -101,7 +76,9 @@
         <h1>Status breakdown</h1>
         <p class="muted">Realtime counts by status</p>
         <table>
-          <thead><tr><th>Status</th><th>Count</th></tr></thead>
+          <thead>
+            <tr><th>Status</th><th>Count</th></tr>
+          </thead>
           <tbody id="statusTable"></tbody>
         </table>
       </div>
@@ -112,9 +89,10 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
-    import { getFirestore, doc, getDoc, collection, query, onSnapshot } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+    import { getFirestore, collection, query, onSnapshot } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
+    // ✅ Your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyBHl8DNvITATjqw2u8DhbopnHTPfDR_RiU",
       authDomain: "dublinfix-enquiry-saas.firebaseapp.com",
@@ -125,18 +103,7 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
     const db = getFirestore(app);
-
-    const loginCard = document.getElementById("loginCard");
-    const dash = document.getElementById("dash");
-    const errEl = document.getElementById("err");
-
-    const emailEl = document.getElementById("email");
-    const passEl = document.getElementById("password");
-    const loginBtn = document.getElementById("loginBtn");
-    const logoutBtn = document.getElementById("logoutBtn");
-    const loginErr = document.getElementById("loginErr");
 
     const totalEl = document.getElementById("total");
     const openEl = document.getElementById("open");
@@ -144,27 +111,62 @@
     const rateBar = document.getElementById("rateBar");
     const last24El = document.getElementById("last24");
     const statusTable = document.getElementById("statusTable");
+    const errEl = document.getElementById("err");
 
-    function show(el, msg){ el.style.display="block"; el.textContent = msg; }
-    function hide(el){ el.style.display="none"; el.textContent = ""; }
+    function showErr(msg){ errEl.style.display="block"; errEl.textContent = msg; }
 
-    let unsubscribe = null;
+    const q = query(collection(db, "enquiries"));
 
-    async function isStaff(user){
-      const s = await getDoc(doc(db, "staff", user.uid));
-      return s.exists();
-    }
+    onSnapshot(q, (snap) => {
+      const now = Date.now();
+      const dayAgo = now - (24 * 60 * 60 * 1000);
 
-    function startRealtime(){
-      const q = query(collection(db, "enquiries"));
-      if (unsubscribe) unsubscribe();
+      let total = 0;
+      let resolved = 0;
+      let open = 0;
+      let last24 = 0;
 
-      unsubscribe = onSnapshot(q, (snap) => {
-        const now = Date.now();
-        const dayAgo = now - 24*60*60*1000;
+      const byStatus = new Map();
 
-        let total = 0, resolved = 0, open = 0, last24 = 0;
-        const byStatus = new Map();
+      snap.forEach(d => {
+        const e = d.data();
+        total++;
 
-        snap.forEach(d => {
-          const e
+        const status = e.status || "New";
+        byStatus.set(status, (byStatus.get(status) || 0) + 1);
+
+        if (status === "Resolved") resolved++;
+        else open++;
+
+        // last 24 hours
+        const created = e.createdAt?.toDate ? e.createdAt.toDate().getTime() : null;
+        if (created && created >= dayAgo) last24++;
+      });
+
+      totalEl.textContent = total;
+      openEl.textContent = open;
+
+      const rate = total === 0 ? 0 : Math.round((resolved / total) * 100);
+      rateEl.textContent = rate + "%";
+      rateBar.style.width = rate + "%";
+
+      last24El.textContent = last24;
+
+      // render status table
+      statusTable.innerHTML = "";
+      const rows = Array.from(byStatus.entries()).sort((a,b) => b[1] - a[1]);
+      for (const [status, count] of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td><span class="pill">${status}</span></td><td>${count}</td>`;
+        statusTable.appendChild(tr);
+      }
+
+      errEl.style.display="none";
+      errEl.textContent="";
+    }, (err) => {
+      console.error(err);
+      showErr("❌ Insights cannot read enquiries. Open insights after signing in on staff OR check Firestore rules.");
+    });
+  </script>
+</body>
+</html>
