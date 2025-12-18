@@ -1,1 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DublinFix IT — Insights</title>
+  <style>
+    :root { --bg:#0b1220; --card:#121b2f; --muted:#9fb0d0; --txt:#e9f0ff; --accent:#6aa7ff; --bad:#ff6a6a; --ok:#7dffb2; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:linear-gradient(160deg,#070b14,#0b1220); color:var(--txt); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px; }
+    nav a { color:var(--muted); text-decoration:none; margin-left:12px; }
+    nav a:hover { color:var(--txt); }
+    .grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+    @media (max-width: 980px){ .grid{grid-template-columns:1fr;} }
+    .card { background: rgba(18,27,47,.85); border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 18px; box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    p { color: var(--muted); margin: 0 0 14px; }
+    .big { font-size: 34px; font-weight: 900; margin: 4px 0; }
+    .muted { color: var(--muted); }
+    .bar { height: 10px; border-radius: 999px; background: rgba(255,255,255,.10); overflow:hidden; margin-top:10px; }
+    .bar > div { height: 100%; width: 0%; background: var(--accent); }
+    table { width:100%; border-collapse: collapse; }
+    td, th { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,.10); text-align:left; }
+    th { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); color: var(--muted); display:inline-block; }
+    .msg { margin-top: 12px; padding: 10px 12px; border-radius: 12px; display:none; }
+    .msg.bad { background: rgba(255,106,106,.12); border:1px solid rgba(255,106,106,.25); color: var(--bad); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div style="font-weight:800;">DublinFix IT</div>
+        <div style="color:var(--muted); font-size:12px;">Operational Insights (Realtime)</div>
+      </div>
+      <nav>
+        <a href="public.html">Public</a>
+        <a href="staff.html">Staff</a>
+        <a href="insights.html">Insights</a>
+      </nav>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h1>Total enquiries</h1>
+        <div id="total" class="big">0</div>
+        <div class="muted">All time</div>
+      </div>
+
+      <div class="card">
+        <h1>Open enquiries</h1>
+        <div id="open" class="big">0</div>
+        <div class="muted">Status ≠ Resolved</div>
+      </div>
+
+      <div class="card">
+        <h1>Resolution rate</h1>
+        <div id="rate" class="big">0%</div>
+        <div class="muted">Resolved / Total</div>
+        <div class="bar"><div id="rateBar"></div></div>
+      </div>
+    </div>
+
+    <div style="height:14px;"></div>
+
+    <div class="grid">
+      <div class="card">
+        <h1>Last 24 hours</h1>
+        <div id="last24" class="big">0</div>
+        <div class="muted">Enquiries created in last 24h</div>
+      </div>
+
+      <div class="card" style="grid-column: span 2;">
+        <h1>Status breakdown</h1>
+        <p class="muted">Realtime counts by status</p>
+        <table>
+          <thead>
+            <tr><th>Status</th><th>Count</th></tr>
+          </thead>
+          <tbody id="statusTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="err" class="msg bad"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+    import { getFirestore, collection, query, onSnapshot } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+    // ✅ Your Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyBHl8DNvITATjqw2u8DhbopnHTPfDR_RiU",
+      authDomain: "dublinfix-enquiry-saas.firebaseapp.com",
+      projectId: "dublinfix-enquiry-saas",
+      storageBucket: "dublinfix-enquiry-saas.firebasestorage.app",
+      messagingSenderId: "677739653412",
+      appId: "1:677739653412:web:5937442f4c01d075ceebb1"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const totalEl = document.getElementById("total");
+    const openEl = document.getElementById("open");
+    const rateEl = document.getElementById("rate");
+    const rateBar = document.getElementById("rateBar");
+    const last24El = document.getElementById("last24");
+    const statusTable = document.getElementById("statusTable");
+    const errEl = document.getElementById("err");
+
+    function showErr(msg){ errEl.style.display="block"; errEl.textContent = msg; }
+
+    const q = query(collection(db, "enquiries"));
+
+    onSnapshot(q, (snap) => {
+      const now = Date.now();
+      const dayAgo = now - (24 * 60 * 60 * 1000);
+
+      let total = 0;
+      let resolved = 0;
+      let open = 0;
+      let last24 = 0;
+
+      const byStatus = new Map();
+
+      snap.forEach(d => {
+        const e = d.data();
+        total++;
+
+        const status = e.status || "New";
+        byStatus.set(status, (byStatus.get(status) || 0) + 1);
+
+        if (status === "Resolved") resolved++;
+        else open++;
+
+        // last 24 hours
+        const created = e.createdAt?.toDate ? e.createdAt.toDate().getTime() : null;
+        if (created && created >= dayAgo) last24++;
+      });
+
+      totalEl.textContent = total;
+      openEl.textContent = open;
+
+      const rate = total === 0 ? 0 : Math.round((resolved / total) * 100);
+      rateEl.textContent = rate + "%";
+      rateBar.style.width = rate + "%";
+
+      last24El.textContent = last24;
+
+      // render status table
+      statusTable.innerHTML = "";
+      const rows = Array.from(byStatus.entries()).sort((a,b) => b[1] - a[1]);
+      for (const [status, count] of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td><span class="pill">${status}</span></td><td>${count}</td>`;
+        statusTable.appendChild(tr);
+      }
+
+      errEl.style.display="none";
+      errEl.textContent="";
+    }, (err) => {
+      console.error(err);
+      showErr("❌ Insights cannot read enquiries. Open insights after signing in on staff OR check Firestore rules.");
+    });
+  </script>
+</body>
+</html>
 
